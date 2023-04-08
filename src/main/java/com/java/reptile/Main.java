@@ -24,14 +24,20 @@ public class Main {
         linkPool.add("https://sina.cn");
         while (true) {
             // 是否存在在连接池中
-            if (linkPool.isEmpty()) break;
+            if (linkPool.isEmpty()) {
+                break;
+            }
             // 从最后一个拿最有效率，不需要挪动元素
             // remove 会返回拿掉的元素
             String link = linkPool.remove(linkPool.size() - 1);
             // 是否正在处理这个连接池
-            if (processedLinks.contains(linkPool)) continue;
+            if (processedLinks.contains(linkPool)) {
+                continue;
+            }
             // 是否是我们要处理的
-            if (!link.contains(link)) continue;
+            if (!link.contains(link)) {
+                continue;
+            }
             if (isInterestingLink(link)) {
                 // 我们需要处理
                 startHttp(link, linkPool, processedLinks);
@@ -70,6 +76,7 @@ public class Main {
             }
         }
     }
+
     // 给我一个 link，我转换成 String html
     private static Document httpGetAndParseHtml(String link) throws IOException {
         final CloseableHttpClient httpClient = HttpClients.createDefault();
