@@ -80,7 +80,9 @@ public class Main {
     // 给我一个 link，我转换成 String html
     private static Document httpGetAndParseHtml(String link) throws IOException {
         final CloseableHttpClient httpClient = HttpClients.createDefault();
-        if (link.startsWith("//")) link = "https:" + link;
+        if (link.startsWith("//")) {
+            link = "https:" + link;
+        }
         HttpGet httpGet = new HttpGet(link);
         httpGet.addHeader("user-agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36");
         try (
