@@ -17,6 +17,10 @@ import java.io.IOException;
 
 public class Main {
     public static void main(String[] args) {
+        Integer i = null;
+        if (i == 1) {
+            return;
+        }
         // 待处理的连接池
         List<String> linkPool = new ArrayList<>();
         // 正在处理的连接池
