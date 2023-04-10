@@ -19,38 +19,27 @@ import java.io.IOException;
 public class Main {
     public static void main(String[] args) throws SQLException {
         Connection connection = DriverManager.getConnection("jdbc:h2:file:/Users/sunkuangdong/Desktop/javaStudy/java-reptile/news");
-        // 从数据库中加载即将处理的
-        List<String> linkPool = loadUrlsFromDatabase(connection, "select link from LINKS_TO_BE_PROCESSED");
-        // 正在处理的连接池
-        // 从数据库中加载已经处理的
-        Set<String> processedLinks = new HashSet<>(loadUrlsFromDatabase(connection, "select link from LINKS_ALREADY_PROCESSED"));
-        while (true) {
-            // 是否存在在连接池中
-            if (linkPool.isEmpty()) {
-                break;
-            }
-            // 从最后一个拿最有效率，不需要挪动元素
-            // remove 会返回拿掉的元素
-            String link = linkPool.remove(linkPool.size() - 1);
-            // 从数据库中删除
-            try (PreparedStatement statement = connection.prepareStatement("DELETE from LINKS_TO_BE_PROCESSED where link = ?")) {
-                statement.setString(1, link); // 设置第一个参数 ? 为link
-                statement.executeUpdate(); // 执行 SQL 语句，并返回受影响的行数。
-            }
+        String link;
+        while ((link = getNextLinkThenDelete(connection)) != null) {
             // 从数据库中判断 是否正在处理这个连接池
             if (isLinkProcessed(connection, link)) {
                 continue;
             }
-            // 是否是我们要处理的
-            if (!linkPool.contains(link)) {
-                continue;
-            }
             if (isInterestingLink(link)) {
                 // 我们需要处理
-                startHttp(link, linkPool, processedLinks, connection);
+                startHttp(link, connection);
             }
         }
+    }
 
+    private static String getNextLinkThenDelete(Connection connection) throws SQLException {
+        String link = getNextLink(connection, "select link from LINKS_TO_BE_PROCESSED");
+        // 是否存在在连接池中
+        if (link == null) {
+            return null;
+        }
+        insertOrDeleteLinkIntoDatabase(connection, "DELETE from LINKS_TO_BE_PROCESSED where link = ?", link);
+        return link;
     }
 
     private static boolean isLinkProcessed(Connection connection, String link) throws SQLException {
@@ -69,24 +58,23 @@ public class Main {
         return false;
     }
 
-    private static List<String> loadUrlsFromDatabase(Connection connection, String sqlUrl) throws SQLException {
+    private static String getNextLink(Connection connection, String sqlUrl) throws SQLException {
         // 待处理的连接池
-        List<String> linkPool = new ArrayList<>();
         ResultSet resultSet = null;
         try (PreparedStatement statement = connection.prepareStatement(sqlUrl)) {
             resultSet = statement.executeQuery();
             while (resultSet.next()) {
-                linkPool.add(resultSet.getString(1));
+                return resultSet.getString(1);
             }
         } finally {
             if (resultSet != null) {
                 resultSet.close();
             }
         }
-        return linkPool;
+        return null;
     }
 
-    public static void startHttp(String link, List<String> linkPool, Set<String> processedLinks, Connection connection) {
+    public static void startHttp(String link, Connection connection) {
         try {
             // 使用 Jsoup 解析 html 字符串
             Document doc = httpGetAndParseHtml(link);
@@ -94,8 +82,7 @@ public class Main {
             // 假如这是一个新闻的页面，就存入数据库，不然不管
             storeIntoDatabaseIfItIsNwesPage(doc);
             // 处理完成之后放进数据库中
-//            processedLinks.add(link);
-            insertLinkIntoDatabase(connection, "insert into LINKS_ALREADY_PROCESSED(link) values (?)", link);
+            insertOrDeleteLinkIntoDatabase(connection, "insert into LINKS_ALREADY_PROCESSED(link) values (?)", link);
         } catch (ParseException e) {
             throw new RuntimeException(e);
         } catch (IOException e) {
@@ -107,11 +94,11 @@ public class Main {
         // 获取想要的结果
         for (Element aTag : doc.select("a")) {
             String href = aTag.attr("href");
-            insertLinkIntoDatabase(connection, "insert into LINKS_TO_BE_PROCESSED(link) values (?)", href);
+            insertOrDeleteLinkIntoDatabase(connection, "insert into LINKS_TO_BE_PROCESSED(link) values (?)", href);
         }
     }
 
-    private static void insertLinkIntoDatabase(Connection connection, String sql, String link) {
+    private static void insertOrDeleteLinkIntoDatabase(Connection connection, String sql, String link) {
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setString(1, link);
             statement.executeUpdate();
