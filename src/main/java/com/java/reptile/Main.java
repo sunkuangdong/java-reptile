@@ -15,105 +15,83 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 
 import java.io.IOException;
+import java.util.stream.Collectors;
 
 public class Main {
-    public static void main(String[] args) throws SQLException {
-        Connection connection = DriverManager.getConnection("jdbc:h2:file:/Users/sunkuangdong/Desktop/javaStudy/java-reptile/news");
-        String link;
-        while ((link = getNextLinkThenDelete(connection)) != null) {
-            // 从数据库中判断 是否正在处理这个连接池
-            if (isLinkProcessed(connection, link)) {
-                continue;
-            }
-            if (isInterestingLink(link)) {
-                // 我们需要处理
-                startHttp(link, connection);
-            }
-        }
-    }
+    DatabaseAccessObject dao;
 
-    private static String getNextLinkThenDelete(Connection connection) throws SQLException {
-        String link = getNextLink(connection, "select link from LINKS_TO_BE_PROCESSED");
-        // 是否存在在连接池中
-        if (link == null) {
-            return null;
-        }
-        insertOrDeleteLinkIntoDatabase(connection, "DELETE from LINKS_TO_BE_PROCESSED where link = ?", link);
-        return link;
-    }
-
-    private static boolean isLinkProcessed(Connection connection, String link) throws SQLException {
-        ResultSet resultSet = null;
-        try (PreparedStatement statement = connection.prepareStatement("select link from LINKS_ALREADY_PROCESSED where link = ?")) {
-            statement.setString(1, link);
-            resultSet = statement.executeQuery();
-            if (resultSet.next()) {
-                return true;
-            }
-        } finally {
-            if (resultSet != null) {
-                resultSet.close();
-            }
-        }
-        return false;
-    }
-
-    private static String getNextLink(Connection connection, String sqlUrl) throws SQLException {
-        // 待处理的连接池
-        ResultSet resultSet = null;
-        try (PreparedStatement statement = connection.prepareStatement(sqlUrl)) {
-            resultSet = statement.executeQuery();
-            while (resultSet.next()) {
-                return resultSet.getString(1);
-            }
-        } finally {
-            if (resultSet != null) {
-                resultSet.close();
-            }
-        }
-        return null;
-    }
-
-    public static void startHttp(String link, Connection connection) {
+    {
         try {
-            // 使用 Jsoup 解析 html 字符串
-            Document doc = httpGetAndParseHtml(link);
-            parseUrlsFrompageAndStoreIntoDatabase(connection, doc);
-            // 假如这是一个新闻的页面，就存入数据库，不然不管
-            storeIntoDatabaseIfItIsNwesPage(doc);
-            // 处理完成之后放进数据库中
-            insertOrDeleteLinkIntoDatabase(connection, "insert into LINKS_ALREADY_PROCESSED(link) values (?)", link);
-        } catch (ParseException e) {
-            throw new RuntimeException(e);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    private static void parseUrlsFrompageAndStoreIntoDatabase(Connection connection, Document doc) {
-        // 获取想要的结果
-        for (Element aTag : doc.select("a")) {
-            String href = aTag.attr("href");
-            insertOrDeleteLinkIntoDatabase(connection, "insert into LINKS_TO_BE_PROCESSED(link) values (?)", href);
-        }
-    }
-
-    private static void insertOrDeleteLinkIntoDatabase(Connection connection, String sql, String link) {
-        try (PreparedStatement statement = connection.prepareStatement(sql)) {
-            statement.setString(1, link);
-            statement.executeUpdate();
+            dao = new DatabaseAccessObject();
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
     }
 
-    private static void storeIntoDatabaseIfItIsNwesPage(Document doc) {
-        ArrayList<Element> articleTags = doc.select("m_f_a_r");
+    public void run() throws SQLException {
+        String link;
+        while ((link = getNextLinkThenDelete()) != null) {
+            // 从数据库中判断 是否正在处理这个连接池
+            if (dao.isLinkProcessed(link)) {
+                continue;
+            }
+            if (isInterestingLink(link)) {
+                // 我们需要处理
+                startHttp(link);
+            }
+        }
+    }
+
+    public static void main(String[] args) throws SQLException {
+        new Main().run();
+    }
+
+    private String getNextLinkThenDelete() throws SQLException {
+        String link = dao.getNextLink("select link from LINKS_TO_BE_PROCESSED");
+        // 是否存在在连接池中
+        if (link == null) {
+            return null;
+        }
+        dao.insertOrDeleteLinkIntoDatabase("DELETE from LINKS_TO_BE_PROCESSED where link = ?", link);
+        return link;
+    }
+
+
+
+    public void startHttp(String link) {
+        try {
+            // 使用 Jsoup 解析 html 字符串
+            Document doc = httpGetAndParseHtml(link);
+            parseUrlsFrompageAndStoreIntoDatabase(doc);
+            // 假如这是一个新闻的页面，就存入数据库，不然不管
+            storeIntoDatabaseIfItIsNwesPage(doc, link);
+            // 处理完成之后放进数据库中
+            dao.insertOrDeleteLinkIntoDatabase("insert into LINKS_ALREADY_PROCESSED(link) values (?)", link);
+        } catch (ParseException | IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private void parseUrlsFrompageAndStoreIntoDatabase(Document doc) {
+        // 获取想要的结果
+        for (Element aTag : doc.select("a")) {
+            String href = aTag.attr("href");
+            dao.insertOrDeleteLinkIntoDatabase("insert into LINKS_TO_BE_PROCESSED(link) values (?)", href);
+        }
+    }
+
+
+    private void storeIntoDatabaseIfItIsNwesPage(Document doc, String link) {
+        ArrayList<Element> articleTags = doc.select("article");
         if (!articleTags.isEmpty()) {
             for (Element articleTag : articleTags) {
                 // 拿到了 title
                 String title = articleTags.get(0).child(0).text();
+                ArrayList<Element> elements = articleTag.select("p");
+                String content = elements.stream().map(Element::text).collect(Collectors.joining("\n"));
                 System.out.println(title);
+                System.out.println(content);
+                dao.insertNewsIntoDatabase(link, title, content);
             }
         }
     }
@@ -129,9 +107,7 @@ public class Main {
         try (
                 CloseableHttpResponse response = httpClient.execute(httpGet)
         ) {
-            System.out.println(link);
             HttpEntity responseGetEntity = response.getEntity();
-            System.out.println(response.getStatusLine());
             String html = EntityUtils.toString(responseGetEntity);
             return Jsoup.parse(html);
         }
