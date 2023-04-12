@@ -4,6 +4,7 @@ import java.sql.*;
 import java.util.*;
 
 import org.apache.http.HttpEntity;
+import org.apache.http.ParseException;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.CloseableHttpClient;
@@ -16,28 +17,26 @@ import org.jsoup.nodes.Element;
 import java.io.IOException;
 import java.util.stream.Collectors;
 
-public class Crawler extends Thread {
-    private CrawlerDao dao;
-    public Crawler(CrawlerDao dao){
-        this.dao = dao;
-    }
-    public void run() {
-        try {
-            String link;
-            while ((link = dao.getNextLinkThenDelete()) != null) {
-                // 从数据库中判断 是否正在处理这个连接池
-                if (dao.isLinkProcessed(link)) {
-                    continue;
-                }
-                if (isInterestingLink(link)) {
-                    // 我们需要处理
-                    startHttp(link);
-                }
-            }
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+public class Crawler {
+    MyBatisCrawlerDao dao = new MyBatisCrawlerDao();
+    ;
 
+    public void run() throws SQLException {
+        String link;
+        while ((link = dao.getNextLinkThenDelete()) != null) {
+            // 从数据库中判断 是否正在处理这个连接池
+            if (dao.isLinkProcessed(link)) {
+                continue;
+            }
+            if (isInterestingLink(link)) {
+                // 我们需要处理
+                startHttp(link);
+            }
+        }
+    }
+
+    public static void main(String[] args) throws SQLException {
+        new Crawler().run();
     }
 
     public void startHttp(String link) {
@@ -71,7 +70,8 @@ public class Crawler extends Thread {
                 String title = articleTags.get(0).child(0).text();
                 ArrayList<Element> elements = articleTag.select("p");
                 String content = elements.stream().map(Element::text).collect(Collectors.joining("\n"));
-                System.out.println(link);
+                System.out.println(title);
+                System.out.println(content);
                 dao.insertNewsIntoDatabase(link, title, content);
             }
         }
