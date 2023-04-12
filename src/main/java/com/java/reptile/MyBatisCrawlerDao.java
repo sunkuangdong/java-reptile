@@ -24,6 +24,7 @@ public class MyBatisCrawlerDao implements CrawlerDao{
         }
     }
 
+    // synchronized 多线程爬取数据 避免 多个线程url相同
     @Override
     public synchronized String getNextLinkThenDelete() throws SQLException {
         try (SqlSession session = sqlSessionFactory.openSession(true)) {
