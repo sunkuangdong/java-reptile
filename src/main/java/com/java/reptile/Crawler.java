@@ -17,26 +17,29 @@ import org.jsoup.nodes.Element;
 import java.io.IOException;
 import java.util.stream.Collectors;
 
-public class Crawler {
-    MyBatisCrawlerDao dao = new MyBatisCrawlerDao();
-    ;
+public class Crawler extends Thread {
+    private CrawlerDao dao;
 
-    public void run() throws SQLException {
-        String link;
-        while ((link = dao.getNextLinkThenDelete()) != null) {
-            // 从数据库中判断 是否正在处理这个连接池
-            if (dao.isLinkProcessed(link)) {
-                continue;
-            }
-            if (isInterestingLink(link)) {
-                // 我们需要处理
-                startHttp(link);
-            }
-        }
+    public Crawler(CrawlerDao dao) {
+        this.dao = dao;
     }
 
-    public static void main(String[] args) throws SQLException {
-        new Crawler().run();
+    public void run() {
+        try {
+            String link;
+            while ((link = dao.getNextLinkThenDelete()) != null) {
+                // 从数据库中判断 是否正在处理这个连接池
+                if (dao.isLinkProcessed(link)) {
+                    continue;
+                }
+                if (isInterestingLink(link)) {
+                    // 我们需要处理
+                    startHttp(link);
+                }
+            }
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public void startHttp(String link) {
